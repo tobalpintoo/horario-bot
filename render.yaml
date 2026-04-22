@@ -1,0 +1,21 @@
+services:
+  - type: worker
+    name: telegram-horario-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python telegram_horario_bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_FILE
+        value: /etc/secrets/service_account.json
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SHEET_RANGE
+        value: Horario!A:E
+      - key: TZ
+        value: America/Santiago
+      - key: AUTHORIZED_CHAT_ID
+        sync: false
+      - key: NOTIFY_BEFORE_MINUTES
+        value: "10"
