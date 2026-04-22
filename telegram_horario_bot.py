@@ -28,6 +28,7 @@ TIMEZONE_NAME = os.environ.get("TZ", "America/Santiago")
 AUTHORIZED_CHAT_ID = os.environ.get("AUTHORIZED_CHAT_ID")
 NOTIFY_BEFORE_MINUTES = int(os.environ.get("NOTIFY_BEFORE_MINUTES", "10"))
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+LAST_CHAT_ID = None
 
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -183,6 +184,15 @@ def get_today_classes(schedule: List[ClassSlot], now: Optional[datetime] = None)
     return sorted([c for c in schedule if c.day == current_day], key=lambda c: c.start_minutes)
 
 
+def get_tomorrow_classes(schedule: List[ClassSlot], now: Optional[datetime] = None):
+    now = now or get_now_local()
+    current_day = DAY_MAP.get(now.strftime("%A").lower(), "lunes")
+    current_index = ORDERED_DAYS.index(current_day) if current_day in ORDERED_DAYS else 0
+    tomorrow_day = ORDERED_DAYS[(current_index + 1) % 7]
+    tomorrow_classes = sorted([c for c in schedule if c.day == tomorrow_day], key=lambda c: c.start_minutes)
+    return tomorrow_classes, tomorrow_day
+
+
 def format_current_class_message(current_class: Optional[ClassSlot]) -> str:
     if current_class is None:
         return "Ahora mismo no estás en clases."
@@ -216,6 +226,16 @@ def format_today_classes_message(today_classes: List[ClassSlot], now: Optional[d
 
     lines = [f"Tus clases de {current_day}:"]
     for class_slot in today_classes:
+        lines.append(f"{class_slot.start_str} - {class_slot.end_str} | {class_slot.subject} | {class_slot.room}")
+    return "\n".join(lines)
+
+
+def format_tomorrow_classes_message(tomorrow_classes: List[ClassSlot], tomorrow_day: str) -> str:
+    if not tomorrow_classes:
+        return f"No tienes clases para {tomorrow_day}."
+
+    lines = [f"Tus clases de {tomorrow_day}:"]
+    for class_slot in tomorrow_classes:
         lines.append(f"{class_slot.start_str} - {class_slot.end_str} | {class_slot.subject} | {class_slot.room}")
     return "\n".join(lines)
 
@@ -257,7 +277,7 @@ def notification_key(class_slot: ClassSlot) -> str:
 
 
 def maybe_send_notifications(schedule: List[ClassSlot], sent_notifications: Set[str], now: Optional[datetime] = None) -> None:
-    if not AUTHORIZED_CHAT_ID:
+    if LAST_CHAT_ID is None:
         return
 
     now = now or get_now_local()
@@ -280,7 +300,7 @@ def maybe_send_notifications(schedule: List[ClassSlot], sent_notifications: Set[
                 f"Sala: {class_slot.room}\n"
                 f"Hora: {class_slot.start_str}"
             )
-            send_message(int(AUTHORIZED_CHAT_ID), message)
+            send_message(LAST_CHAT_ID, message)
             sent_notifications.add(key)
 
 
@@ -307,11 +327,16 @@ def handle_message(text: str) -> str:
             "Hola. Escríbeme:\n"
             "- próxima clase\n"
             "- qué tengo ahora\n"
-            "- /hoy"
+            "- /hoy\n"
+            "- /mañana"
         )
 
     if normalized in {"/hoy", "hoy", "clases de hoy", "que tengo hoy", "qué tengo hoy"}:
         return format_today_classes_message(get_today_classes(schedule))
+
+    if normalized in {"/mañana", "mañana", "manana", "clases de mañana", "clases de manana", "que tengo mañana", "que tengo manana", "qué tengo mañana"}:
+        tomorrow_classes, tomorrow_day = get_tomorrow_classes(schedule)
+        return format_tomorrow_classes_message(tomorrow_classes, tomorrow_day)
 
     if normalized in {"que tengo ahora", "qué tengo ahora", "estoy en clase", "tengo clase ahora", "/ahora"}:
         return format_current_class_message(find_current_class(schedule))
@@ -319,10 +344,11 @@ def handle_message(text: str) -> str:
     if normalized in {"proxima clase", "próxima clase", "cual es mi proxima clase", "cuál es mi próxima clase", "siguiente clase", "/proxima"}:
         return format_class_message(find_next_class(schedule))
 
-    return "No entendí. Usa: próxima clase, /hoy o qué tengo ahora"
+    return "No entendí. Usa: próxima clase, /hoy, /mañana o qué tengo ahora"
 
 
 def run_bot_polling() -> None:
+    global LAST_CHAT_ID
     print("Bot iniciado. Esperando mensajes y notificaciones...")
     update_offset = None
     sent_notifications: Set[str] = set()
@@ -344,6 +370,8 @@ def run_bot_polling() -> None:
 
                 if chat_id is None:
                     continue
+
+                LAST_CHAT_ID = chat_id
 
                 if not is_authorized(chat_id):
                     send_message(chat_id, "Este bot no está habilitado para este chat.")
@@ -375,3 +403,4 @@ def run_bot_polling() -> None:
 
 if __name__ == "__main__":
     run_bot_polling()
+
