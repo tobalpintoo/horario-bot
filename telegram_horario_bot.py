@@ -2,34 +2,34 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional, Set
 
 import requests
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # =========================
 # CONFIGURACIÓN
 # =========================
 # Variables de entorno esperadas:
-# TELEGRAM_BOT_TOKEN=tu_token_de_botfather
-# GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json
-# GOOGLE_SHEET_ID=id_de_tu_google_sheet
+# TELEGRAM_BOT_TOKEN
+# GOOGLE_SHEET_ID
 # GOOGLE_SHEET_RANGE=Horario!A:E
 # TZ=America/Santiago
 # AUTHORIZED_CHAT_ID=opcional
-# NOTIFY_BEFORE_MINUTES=10  (opcional)
+# NOTIFY_BEFORE_MINUTES=10
+# GOOGLE_SERVICE_ACCOUNT_JSON=(contenido completo del json)
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "service_account.json")
 GOOGLE_SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
 GOOGLE_SHEET_RANGE = os.environ.get("GOOGLE_SHEET_RANGE", "Horario!A:E")
 TIMEZONE_NAME = os.environ.get("TZ", "America/Santiago")
 AUTHORIZED_CHAT_ID = os.environ.get("AUTHORIZED_CHAT_ID")
 NOTIFY_BEFORE_MINUTES = int(os.environ.get("NOTIFY_BEFORE_MINUTES", "10"))
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 
-TELEGRAM_API_BASE = f"https://api.telegram.org/bot8542929041:AAEMTrqlL_AemMcWLTw7nHLCgw8ECgNnBAk"
+TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 DAY_MAP = {
@@ -94,8 +94,9 @@ def get_now_local() -> datetime:
 
 
 def build_sheets_service():
-    credentials = Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_FILE,
+    service_account_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+    credentials = service_account.Credentials.from_service_account_info(
+        service_account_info,
         scopes=SCOPES,
     )
     return build("sheets", "v4", credentials=credentials)
@@ -136,7 +137,10 @@ def parse_schedule(rows: List[List[str]]) -> List[ClassSlot]:
         except Exception:
             continue
 
-    return sorted(parsed, key=lambda c: (ORDERED_DAYS.index(c.day) if c.day in ORDERED_DAYS else 99, c.start_minutes))
+    return sorted(
+        parsed,
+        key=lambda c: (ORDERED_DAYS.index(c.day) if c.day in ORDERED_DAYS else 99, c.start_minutes),
+    )
 
 
 def find_current_class(schedule: List[ClassSlot], now: Optional[datetime] = None) -> Optional[ClassSlot]:
